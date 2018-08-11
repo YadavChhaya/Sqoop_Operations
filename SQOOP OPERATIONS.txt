@@ -1,0 +1,858 @@
+==================MYSQL-SQOOP-HDFS===========================
+//PROBLEM STATEMENT : IMPORTING DATA FROM MYSQL TABLE TO HDFS
+
+// CREATE Tables in mysql
+//mysql -u root -p for Cloudera
+
+sudo service mysqld start
+mysql -u root -pcloudera
+
+CREATE DATABASE IF NOT EXISTS mysqldb2;
+
+USE mysqldb2;
+
+CREATE TABLE IF NOT EXISTS mysqltable
+(
+id INT PRIMARY KEY,
+name VARCHAR(20),
+location VARCHAR(20),
+insertts TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+SELECT * FROM mysqltable;
+
+INSERT INTO  mysqltable VALUES(1, 'udemy','Bangalore',now());
+
+INSERT INTO  mysqltable VALUES(2, 'edureka','Walnut',now());
+
+INSERT INTO  mysqltable VALUES(3, 'acadgild','Bangalore',now());
+
+INSERT INTO  mysqltable VALUES(4, 'Swara','Mumbai', now());
+
+grant all on *.* to 'root'@'localhost' with grant option;
+
+flush privileges;
+
+commit;
+
+exit;
+
+
+//Single Mapper Import
+--------------------
+[cloudera@quickstart ~]$ sqoop import --connect jdbc:mysql://localhost/mysqldb2 --username 'root' -P --table 'mysqltable' \
+--target-dir '/sqoop_output1' -m 1;
+
+
+
+[cloudera@quickstart ~]$ hadoop fs -ls /sqoop_output1
+[cloudera@quickstart ~]$ hadoop fs -cat /sqoop_output1/part-m-00000
+[cloudera@quickstart ~]$ hadoop fs -rm -R /sqoop_output1
+
+//Run on mysql prompt
+-----------------------
+
+
+INSERT INTO  mysqltable VALUES(5, 'Denneise','Chennai',now());
+INSERT INTO  mysqltable VALUES(6, 'Durga','Mumbai',now());
+commit;
+
+
+
+Incremental import with append option
+-------------------------------------
+
+//Below command will fetch entire table and put it into new file in same directory when last value is not mentioned.
+
+[cloudera@quickstart ~]$ sqoop import --connect jdbc:mysql://localhost/mysqldb2 --username 'root' -P --table 'mysqltable' \
+--target-dir '/sqoop_output1' --incremental append --check-column id --m 1;
+
+//Below command will fetch the newly added records in table and put it into new file in same directory when last value is being put in sqoop import. All the records after value 4 will be collected in new file in target directory.
+
+[cloudera@quickstart ~]$ sqoop import --connect jdbc:mysql://localhost/mysqldb2 --username 'root' -P --table 'mysqltable' --target-dir '/sqoop_output1' --incremental append --check-column id --last-value 4 --m 1;
+
+[cloudera@quickstart ~]$ hadoop fs -cat /sqoop_output1/part-m-00001
+
+
+
+//Run on mysql prompt
+-----------------------
+INSERT INTO  mysqltable VALUES(7, 'Durga','Mumbai',now());
+INSERT INTO  mysqltable VALUES(8, 'Dezyre','Chennai',now());
+commit;
+
+// SQOOP Incremental append last value demo
+//Below command will fetch the newly added records in table and put it into new file in same directory when last value is being put in sqoop import 
+
+[cloudera@quickstart ~]$ sqoop import --connect jdbc:mysql://localhost/mysqldb2 --username 'root' -P --table 'mysqltable' \
+--target-dir '/sqoop_output' --incremental append --check-column id --last-value 6 --m 1;
+
+//Verification of newly added files.
+[cloudera@quickstart ~]$ hadoop fs -cat /sqoop_output1/part-m-00002
+
+
+
+
+//Run on mysql prompt
+-----------------------
+
+
+INSERT INTO  mysqltable VALUES(9, 'Haasan','Kerala',now());
+INSERT INTO  mysqltable VALUES(10, 'Hortonworks','Kolkata',now());
+commit;
+
+// SQOOP Incremental IMPORT WITH LASTMODIFIED OPTION FOR COLUMN WITH TIMESTAMP
+
+[cloudera@quickstart ~]$ sqoop import --connect jdbc:mysql://localhost/mysqldb2 --username 'root' -P --table 'mysqltable' \
+--target-dir '/sqoop_output4' --incremental lastmodified --check-column insertts --last-value '2018-07-04 20:53:30' --m 1;
+
+[cloudera@quickstart ~]$ hadoop fs -cat /sqoop_output4/part-m-00000
+
+[cloudera@quickstart ~]$ INSERT INTO  mysqltable VALUES(11, 'Microsoft','Silicon',now());
+
+
+
+//Multi-Mapper Import, split by demo
+-------------------------------------
+
+[cloudera@quickstart ~]$ sqoop import --connect jdbc:mysql://localhost/mysqldb2 --username 'root' -P --table 'mysqltable' --target-dir '/sqoop_output5' \
+--split-by id --m 3;
+hadoop fs -ls /sqoop_output5
+
+[cloudera@quickstart ~]$ hadoop fs -ls /sqoop_output5
+Found 4 items
+-rw-r--r--   1 cloudera supergroup          0 2018-07-04 21:32 /sqoop_output5/_SUCCESS
+-rw-r--r--   1 cloudera supergroup        159 2018-07-04 21:32 /sqoop_output5/part-m-00000
+-rw-r--r--   1 cloudera supergroup        115 2018-07-04 21:32 /sqoop_output5/part-m-00001
+-rw-r--r--   1 cloudera supergroup        165 2018-07-04 21:32 /sqoop_output5/part-m-00002
+
+
+//WHERE CLAUSE IN MYSQL QUERY
+--------------------------------
+[cloudera@quickstart ~]$ sqoop import --connect jdbc:mysql://localhost/mysqldb2 --username 'root' -P --table 'mysqltable' \
+--m 1 --where "location ='Bangalore'" --target-dir '/sqoop_output6'; 
+
+[cloudera@quickstart ~]$ hadoop fs -cat /sqoop_output6/part-m-00000
+
+[cloudera@quickstart ~]$ sqoop import --connect jdbc:mysql://localhost/mysqldb2 --username 'root' -P --table 'mysqltable' \
+--m 1 --where "location ='Mumbai'" --columns id,name --target-dir '/sqoop_output7'; 
+
+[cloudera@quickstart ~]$ hadoop fs -cat /sqoop_output7/part-m-00000
+
+
+
+//Importing entire DATABASE without exlusion of any tables
+//WHile importing table you cannot mention where, split by clause
+----------------------------------------------------------
+
+[cloudera@quickstart ~]$ sqoop import-all-tables --connect jdbc:mysql://localhost/mysqldb2 --username root -P \
+--warehoUSE-dir /sqoopoutput8 ;
+
+
+[cloudera@quickstart ~]$ hadoop fs -ls /sqoopoutput8
+Found 3 items
+drwxr-xr-x   - cloudera supergroup          0 2018-07-04 22:26 /sqoopoutput8/mysqltable
+drwxr-xr-x   - cloudera supergroup          0 2018-07-04 22:28 /sqoopoutput8/mysqltable1
+drwxr-xr-x   - cloudera supergroup          0 2018-07-04 22:30 /sqoopoutput8/mysqltable2
+
+
+//Importing entire DATABASE with exlusion of tables
+----------------------------------------------------
+
+[cloudera@quickstart ~]$ sqoop import-all-tables --connect jdbc:mysql://localhost/mysqldb2 --username root -P \
+--exclude-tables mysqltable1,mysqltable2 \
+--warehoUSE-dir /sqoop_output8;
+
+
+[cloudera@quickstart ~]$ hadoop fs -ls /sqoop_output8
+Found 1 items
+drwxr-xr-x   - cloudera supergroup          0 2018-07-04 22:20 /sqoop_output8/mysqltable
+
+
+
+//EVAL function demo
+------------------------------------------
+
+[cloudera@quickstart ~]$ sqoop eval --connect jdbc:mysql://localhost/mysqldb2 --username root -P --query "SELECT location FROM mysqltable LIMIT 3";
+
+output:
+------------------------
+| location             | 
+------------------------
+| Bangalore            | 
+| Walnut               | 
+| Bangalore            | 
+------------------------
+
+
+
+//SQOOP password Setting---
+------------------------
+
+[cloudera@quickstart ~]$ cat > sqoop.password
+[cloudera@quickstart ~]$ cat sqoop.password
+[cloudera@quickstart ~]$ hadoop fs -put sqoop.password /
+[cloudera@quickstart ~]$ hadoop fs -chmod 400 /sqoop.password
+[cloudera@quickstart ~]$ hadoop fs -ls /
+
+mysql> GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' IDENTIFIED BY '%password%' WITH GRANT OPTION;
+
+//SQOOP EXPORT SYNTAX TO EXPORT DATA FROM HDFS TO MYSQL TABLE
+-------------------------------------------------------------
+
+[cloudera@quickstart ~]$ sqoop export \
+--connect jdbc:mysql://localhost/mysqldb2 \
+--username 'root' --password-file /sqoop.password \
+--table 'mysqltable' \
+--columns id,name,location \
+--export-dir '/sqoop_output10' \
+--input-fields-terminated-by ',' \
+--m 1  
+;
+
+[cloudera@quickstart ~]$ sqoop export \
+--connect jdbc:mysql://localhost/mysqldb2 \
+--username 'root' --password-file /sqoop.password \
+--table 'mysqltable' \
+--export-dir '/sqoop_output10' \
+--input-fields-terminated-by ',' \
+--m 1 \
+--columns id,name,location 
+;
+
+
+===============================SQOOP JOBS========================
+
+
+[cloudera@quickstart ~]$ sqoop job \
+--CREATE mysqoopjob \
+--import --connect jdbc:mysql://localhost/mysqldb2 \
+--username 'root' -P \
+--table 'mysqltable' \
+--target-dir '/sqoop_output11' \
+--incremental append \
+--check-column id \
+-m 1;
+
+mysql> INSERT INTO  mysqltable VALUES(101, 'xyz','abc',now());
+mysql> INSERT INTO  mysqltable VALUES(111, 'pqr','def',now());
+mysql> commit;
+
+//EXECUTING THE SQOOP JOB
+
+[cloudera@quickstart ~]$ sqoop job --exec mysqoopjob
+
+[cloudera@quickstart ~]$ hadoop fs -ls /sqoop_output11
+[cloudera@quickstart ~]$ hadoop fs -cat /sqoop_output11/part-m-00000
+
+mysql> INSERT INTO  mysqltable VALUES(103, 'xyz','abc',now());
+mysql> INSERT INTO  mysqltable VALUES(114, 'pqr','def',now());
+mysql> commit;
+
+[cloudera@quickstart ~]$ sqoop job --exec mysqoopjob
+[cloudera@quickstart ~]$ hadoop fs -ls /sqoop_output11
+[cloudera@quickstart ~]$ hadoop fs -cat /sqoop_output11/part-m-00001
+
+//LISTING THE SQOOP JOBS
+
+[cloudera@quickstart ~]$ sqoop job --list
+
+//DISPLAYING A PARTICULAR SQOOP JOB
+
+[cloudera@quickstart ~]$ sqoop job --show mysqoopjob
+
+
+
+//SQOOP IMPORT TO HIVE TABLE FROM MYSQL TABLE
+
+After your data is imported into HDFS or this step is omitted, Sqoop will generate a Hive 
+script containing a CREATE TABLE operation defining your columns using Hives types, 
+and a LOAD DATA INPATH statement to move the data files into Hives warehoUSE 
+directory.
+
+Importing data to hive in Sqoop consists of first loading data in HDFS and then loading 
+to hive.
+
+//SQOOP statement for existing hive table
+
+[cloudera@quickstart ~]$ sqoop import \
+--connect jdbc:mysql://localhost/mysqldb2 \
+--username 'root' -P \
+--table 'mysqltable' \
+--target-dir '/sqoop_output2' \
+--hive-import \
+-m 1;
+
+
+//Go to hive and check table structure and content
+hive
+USE default;
+Show tables;
+Select * from mysqltable;
+
+---------------------------------SQOOP EXPORT---------------------------------
+HDFS --->RDBMS
+
+The export tool exports a set of files from HDFS back to an RDBMS. The
+must exist in the DATABASE. 
+The input files are read and parsed into a set of records according to the
+delimiters.
+By default, Sqoop will USE four tasks in parallel for the export process.
+Tables must exist in RDBMS
+
+mysql -u root -pcloudera
+CREATE DATABASE mysqldb2;
+USE db1;
+delete from mysqltable
+commit;
+
+
+
+[cloudera@quickstart ~]$ sqoop export \
+--connect jdbc:mysql://localhost/mysqldb2 \ 
+--username 'root' -P \
+--table 'mysqltable' \ 
+--export-dir '/sqoop_output' \ 
+--input-fields-terminated-by ',' \ 
+--m 1 \ 
+--columns id,name,location \
+
+-------------------------------------------------------------
+========================SQOOP-MERGE==========================
+SELECT * from mysqltab;
+INSERT INTO  mysqltab VALUES(1, 'udemy',now());
+INSERT INTO  mysqltab VALUES(2, 'edureka',now());
+INSERT INTO  mysqltab VALUES(3, 'acadgild',now());
+INSERT INTO  mysqltab VALUES(4, 'Swara', now());
+INSERT INTO  mysqltab VALUES(5, 'acadgild',now());
+INSERT INTO  mysqltab VALUES(6, 'acadgild',now());
+commit;
+
+sqoop import --connect jdbc:mysql://localhost/mysqldb4 \
+--username 'root' -P \
+--table 'mysqltab' --target-dir '/sqoop_output_new' -m 1;
+
+INSERT INTO  mysqltab VALUES(7, 'Swara', now());
+INSERT INTO  mysqltab VALUES(8, 'acadgild',now());
+INSERT INTO  mysqltab VALUES(9, 'acadgild',now());
+commit;
+
+sqoop import --connect jdbc:mysql://localhost/mysqldb4 \
+--username 'root' -P \
+--table 'mysqltab' --target-dir '/sqoop_output_new' \
+--incremental append --check-column id --last-value 6 \
+--m 1;
+
+INSERT INTO  mysqltab VALUES(10, 'udemy',now());
+INSERT INTO  mysqltab VALUES(11, 'edureka',now());
+commit;
+
+sqoop import --connect jdbc:mysql://localhost/mysqldb4 \
+--username 'root' -P --table 'mysqltab' \
+--target-dir '/sqoop_output_new' \
+--incremental append --check-column id --last-value 9 \
+--m 1;
+
+hadoop fs -ls /sqoop_output_new/
+hadoop fs -cat /sqoop_output_new/part-r-00000
+hadoop fs -cat /sqoop_output_new/part-r-00001
+
+//SQOOP MERGE UTILITY to merge all the files that has been
+// accumulated from MYSQL due to incremental import
+
+sqoop codegen --connect jdbc:mysql://localhost/mysqldb4 --username 'root' -P --table 'mysqltab' --outdir '/sqoop_output_new/'
+
+//You can then USE the Sqoop merge tool to “flatten” two data sets into one, as shown in the following example:
+
+sqoop merge \
+--new-data '/sqoop_output_new/part-m-00001' \
+--onto '/sqoop_output_new/part-r-00000' \
+--target-dir '/sqoop_merged_output' \
+--jar-file /tmp/sqoop-cloudera/compile/afac407efa5c7195a1bbb54a2441ca2f/mysqltab.jar \
+--class-name mysqltab --merge-key id ;
+
+hadoop fs -ls /sqoop_merged_output
+hadoop fs -cat /sqoop_merged_output/part-r-00000
+
+// After the merge operation completes, you could import the above data back into a Hive or HBase data store.
+==================MYSQL-SQOOP-HBASE===========================
+//IMPORTING DATA FROM MYSQL TO HBASE
+
+sudo service mysqld start
+mysql -u root -pcloudera
+
+//CREATION OF MYSQL DATABASE
+
+CREATE DATABASE mysqldb3;
+USE mysqldb3;
+
+//CREATION OF MYSQL TABLE
+
+CREATE table IF NOT EXISTS mysqlemployee(id int, name varchar(20), salary float);
+
+//INSERTION OF DATA INTO MYSQL TABLE
+
+INSERT INTO  mysqlemployee values (1,'Chhaya',1000);
+INSERT INTO  mysqlemployee values (2,'Ahhaya',2000);
+INSERT INTO  mysqlemployee values (3,'Bhhaya',3000);
+grant all on *.* to ‘root’@’localhost’ with grant option;
+flush privileges;
+commit;
+select * from mysqlemployee;
+exit;
+
+//CREATION OF HBASE TABLE
+hbase shell
+CREATE 'hbaseemptable','hbasecfdetails','hbasecfhealthdetails'
+scan 'hbaseemptable'
+
+CREATE 'hbaseemptable1','hbasecfdetails','hbasecfhealthdetails'
+scan 'hbaseemptable1'
+
+exit;
+
+//insertion of data into one column family of hbase table
+
+[cloudera@quickstart ~]$ sqoop import \
+--connect jdbc:mysql://localhost/mysqldb3 \
+--username root --password cloudera \
+--table 'mysqlemployee' \
+--columns id,name \
+--hbase-table 'hbaseemptable' \
+--column-family 'hbasecfdetails' \
+--hbase-row-key id \
+-m 1;
+
+
+//insertion of data into second column family of hbase table
+
+[cloudera@quickstart ~]$ sqoop import \
+--connect jdbc:mysql://localhost/mysqldb3 \
+--username root --password cloudera \
+--table 'mysqlemployee' \
+--columns id,salary \
+--hbase-table 'hbaseemptable1' \
+--column-family 'hbasecfdetails' \
+--hbase-row-key id \
+-m 1;
+
+
+//creation of new hbase table via sqoop
+
+[cloudera@quickstart ~]$ sqoop import \
+--connect jdbc:mysql://localhost/mysqldb3 \
+--username root --password cloudera \
+--table 'mysqlemployee' \
+--columns id,name,salary \
+--hbase-table 'hbaseemptable2' \
+--column-family 'hbasecfdetails' \
+--hbase-row-key id \
+-m 1 \
+--hbase-CREATE-table;
+
+
+
+ 
+
+==================MYSQL-SQOOP-HIVE===========================
+//LOADING DATA FROM MYSQL TO HIVE TABLE BY SQOOP
+
+sudo service mysqld start
+mysql -u root -pcloudera
+CREATE DATABASE IF NOT EXISTS mysqldbx;
+USE mysqldbx;
+CREATE TABLE mysqltablex(
+empid int primary key,
+empname varchar(20),
+designation varchar(20)
+);
+
+INSERT INTO  mysqltablex VALUES(1,'Andrew','pm');
+INSERT INTO  mysqltablex VALUES(2,'Sarah','sse');
+INSERT INTO  mysqltablex VALUES(3,'Elijah','sse');
+INSERT INTO  mysqltablex VALUES(4,'Aisha','tl');
+INSERT INTO  mysqltablex VALUES(5,'Joshua','ta');
+INSERT INTO  mysqltablex VALUES(6,'Hyena','spm');
+commit;
+grant all on *.* to  ‘root’@’localhost’ with grant option;
+flush privileges;
+commit;
+exit;
+
+///Below command will apply the same schema to newly CREATED hive table as well.
+
+[cloudera@quickstart ~]$ sqoop import \
+--connect jdbc:mysql://localhost/mysqldbx \
+--username 'root' -P\
+--split-by empid \
+--columns empid,empname \
+--table 'mysqltablex' \
+--target-dir '/sqoopimport' \
+--hive-import \
+--CREATE-hive-table \
+--hive-table default.hivetablex \
+-m 1;
+
+
+==================HIVE-SQOOP-MYSQL===========================
+//LOADING DATA INTO MYSQL TABLE FROM HIVE THROUGH SQOOP
+
+sudo service mysqld start
+mysql -u root -pcloudera
+CREATE DATABASE mysqldb4;
+USE mysqldb4;
+
+CREATE TABLE IF NOT EXISTS mysqltab(
+id int, 
+name varchar(20), 
+insertts timestamp
+);
+grant all on *.* to ‘root’@’localhost’ with grant option;
+flush privileges;
+commit;
+exit
+
+
+[cloudera@quickstart ~]$ sqoop export \
+--connect jdbc:mysql://localhost/mysqldb4 \
+--username 'root' -password cloudera \
+--table 'mysqltab' \
+--export-dir '/user/hive/warehoUSE/hivedb1.db/hivetable1' \
+--input-fields-terminated-by '\001' \
+-m 1 \
+--columns id,name,insertts;
+
+
+sudo service mysqld start
+mysql -u root -pcloudera
+CREATE DATABASE mysqldb4;
+USE mysqldb4;
+CREATE table IF NOT EXISTS mysqltab1(id int, name varchar(20), insertts timestamp);
+grant all on *.* to ‘root’@’localhost’ with grant option;
+flush privileges;
+commit;
+exit
+[cloudera@quickstart ~]$ sqoop export \
+--connect jdbc:mysql://localhost/mysqldb4 \
+--username 'root' -password cloudera --table 'mysqltab' \
+--export-dir '/USEr/hive/warehoUSE/hivedb1.db/hivetable1' \
+--input-fields-terminated-by '\001' \
+-m 1 \
+--columns id,name,insertts \
+--update-key id;
+
+
+//note: export may fail if the schema has difference in datatype.
+
+// exporting selected columns to MYSQL using SQOOP From hIVE
+
+hive> describe hivetable1;
+OK
+id                  	int                 	                    
+name                	string              	                    
+insertts            	string   
+
+
+//WRITING AN HDFS DIRECTORY WITH SELECTED COLUMNS 
+
+hive> INSERT OVERWRITE DIRECTORY 
+'/user/hive/warehoUSE/hivedb1.db/hivetabl1/selectedcolumns' 
+SELECT id, name from hivetable1;
+
+
+//LOADING SELECTED COLUMNS FROM HIVE TO MYSQL TABLE BY SQOOP
+
+[cloudera@quickstart ~]$ sqoop export \
+--connect jdbc:mysql://localhost/mysqldb4 \
+--username 'root' -password cloudera \
+--table 'mysqltab' --columns id,name\
+--export-dir \
+'/USEr/hive/warehoUSE/hivedb1.db/hivetable1/selectedcolumns' \
+--input-fields-terminated-by '\001' \
+-m 1  \
+--update-key id;
+
+
+//INCREMENTAL APPEND TO HIVE TABLE FROM MYSQL USING SQOOP
+
+[cloudera@quickstart ~]$ sqoop import \
+--connect jdbc:mysql://localhost/mysqldbname \
+--username 'root' -P \
+--table 'mysqltable' \
+--target-dir '/user/hive/warehoUSE/hivedb1.db/hivetable' \
+--incremental append \
+--check-column id \
+--last-value mysql_id_value \
+--m 1;
+=======================================================
+
+
+
+
+
+//How to USE Sqoop Export Statement by using staging table 
+//arguments , clear all table arguments and target table in Hadoop ?
+=======================================================
+
+HIVE SHELL
+CREATE DATABASE IF NOT EXISTS retail_db;
+USE retail_db;
+CREATE TABLE IF NOT EXISTS orders(
+id INT,
+date DATE,
+quantity INT,
+product STRING
+)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+STORED AS TEXTFILE
+;
+
+LOAD DATA LOCAL INPATH '/home/cloudera/orderdata1' OVERWRITE INTO TABLE orders;
+LOAD DATA LOCAL INPATH '/home/cloudera/orderdata2' INTO TABLE orders;
+LOAD DATA LOCAL INPATH '/home/cloudera/orderdata3' INTO TABLE orders;
+
+SELECT * FROM orders;
+
+[cloudera@quickstart ~]$ hadoop fs -ls /user/hive/warehouse/retail_db.db/orders/
+
+
+// FOR SQOOP EXPORT MYSQL TABLE SHOULD BE PRESENT PRIOR TO EXPORT 
+//OTHERWISE EXPORT MAY FAIL.
+
+[cloudera@quickstart ~]$ sudo service mysqld start
+[cloudera@quickstart ~]$ mysql -u root -pcloudera
+
+CREATE DATABASE IF NOT EXISTS retail_mysql_db;
+
+USE retail_mysql_db;
+
+CREATE TABLE IF NOT EXISTS mysql_orders(
+id INT PRIMARY KEY,
+date DATE,
+quantity INT,
+product VARCHAR(30)
+)
+;
+
+SELECT * FROM mysql_orders;
+
+==============================================================
+--CREATION OF STAGING TABLE FOR EXPORT
+
+CREATE TABLE IF NOT EXISTS mysql_orders_staging(
+id INT PRIMARY KEY,
+date DATE,
+quantity INT,
+product VARCHAR(30)
+)
+;
+
+[cloudera@quickstart ~]$ sqoop export --connect jdbc:mysql://localhost/retail_mysql_db \
+--username 'root' -P \
+--export-dir /USEr/hive/warehoUSE/retail_db.db/orders/  \
+--table mysql_orders  \
+--staging-table mysql_orders_staging \
+--clear-staging-table \
+--m 1;
+
+//AFTER successful export data will be inserted into mysql table and export table will be empty.
+
+SELECT * FROM mysql_orders;
+//9 records in target table 
++------+------------+----------+--------------+
+| id   | date       | quantity | product      |
++------+------------+----------+--------------+
+| 6881 | 2018-08-07 |       10 | GREEN DRESS  |
+| 6882 | 2018-08-08 |       11 | MAROON DRESS |
+| 6883 | 2018-08-09 |       12 | PURPLE DRESS |
+| 6884 | 2018-08-07 |       10 | GREEN DRESS  |
+| 6885 | 2018-08-08 |       11 | MAROON DRESS |
+| 6886 | 2018-08-09 |       12 | PURPLE DRESS |
+| 6887 | 2018-08-10 |       10 | GREEN DRESS  |
+| 6888 | 2018-08-11 |       11 | MAROON DRESS |
++------+------------+----------+--------------+
+
+SELECT * FROM mysql_orders_staging;
+Empty set (0.01 sec)
+
+
+=========================================================
+
+[cloudera@quickstart ~]$ hadoop fs -cat  /USEr/hive/warehoUSE/retail_db.db/orders/orderdata3
+
+//CORRUPTING THE LAST RECORDS OF /home/cloudera/orderdata3
+//CONVERTING INT FIELD TO STRING
+
+6889,2018-08-11,two,PURPLE DRESS
+
+[cloudera@quickstart ~]$ hadoop fs -rm -R /USEr/hive/warehoUSE/retail_db.db/orders/orderdata3
+[cloudera@quickstart ~]$ hadoop fs -copyFromLocal /home/cloudera/orderdata3 /USEr/hive/warehoUSE/retail_db.db/orders/orderdata3
+[cloudera@quickstart ~]$ hadoop fs -cat  /USEr/hive/warehoUSE/retail_db.db/orders/orderdata3
+
+DELETE FROM mysql_orders;
+
+[cloudera@quickstart ~]$ sqoop export --connect jdbc:mysql://localhost/retail_mysql_db \
+--username 'root' -P \
+--export-dir /USEr/hive/warehoUSE/retail_db.db/orders/  \
+--table mysql_orders  \
+--staging-table mysql_orders_staging \
+--clear-staging-table \
+--m 1;
+
+//SINCE EXPORT FAILED , DATA WILL BE STUCK INTO STAGING TABLE AND 
+//WILL NOT BE TRANSFERRED TO TARGET TABLE.
+
+mysql> SELECT * FROM mysql_orders_staging;
++------+------------+----------+--------------+
+| id   | date       | quantity | product      |
++------+------------+----------+--------------+
+| 6881 | 2018-08-07 |       10 | GREEN DRESS  |
+| 6882 | 2018-08-08 |       11 | MAROON DRESS |
+| 6883 | 2018-08-09 |       12 | PURPLE DRESS |
+| 6884 | 2018-08-07 |       10 | GREEN DRESS  |
+| 6885 | 2018-08-08 |       11 | MAROON DRESS |
+| 6886 | 2018-08-09 |       12 | PURPLE DRESS |
+| 6887 | 2018-08-10 |       10 | GREEN DRESS  |
+| 6888 | 2018-08-11 |       11 | MAROON DRESS |
++------+------------+----------+--------------+
+8 rows in set (0.00 sec)
+
+mysql> SELECT * FROM mysql_orders;
+Empty set (0.01 sec)
+
+
+
+==================================================================
+// WHAT WILL HAPPEN IF OUR MYSQL TABLE HAS DUPLICATE RECORDS ON 
+//COLUMN ON WHICH INCREMENTAL IMPORT WILL HAPPEN.
+
+CREATE DATABASE IF NOT EXISTS mysqldb2;
+
+USE mysqldb2;
+
+CREATE table mysqltable
+(
+id INT,
+name VARCHAR(20),
+location VARCHAR(20),
+insertts TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+SELECT * FROM mysqltable;
+
+INSERT INTO  mysqltable VALUES(1, 'udemy','Bangalore',now());
+
+INSERT INTO  mysqltable VALUES(2, 'edureka','Walnut',now());
+
+INSERT INTO  mysqltable VALUES(3, 'acadgild','Bangalore',now());
+
+
+//Single Mapper Import
+--------------------
+[cloudera@quickstart ~]$ sqoop import \
+--connect jdbc:mysql://localhost/mysqldb2 \
+--username 'root' -P \
+--table 'mysqltable' \
+--target-dir '/sqoop_output2018' \
+-m 1;
+
+//INSERTING DUPLICATE RECORDS IN KEY COLUMN
+
+INSERT INTO  mysqltable VALUES(3, 'Swara','Mumbai', now());
+
+INSERT INTO  mysqltable VALUES(4, 'Vaishali','Mumbai', now());
+
+//INCREMENTAL IMPORT WITH LAST VALUE
+
+[cloudera@quickstart ~]$ sqoop import \
+--connect jdbc:mysql://localhost/mysqldb2 \
+--username 'root' -P \
+--table 'mysqltable' \
+--target-dir '/sqoop_output2018' \
+--incremental append \
+--check-column id \
+--last-value 3 \
+-m 1;
+
+grant all on *.* to 'root'@'localhost' with grant option;
+
+flush privileges;
+
+commit;
+
+exit;
+
+
+
+[cloudera@quickstart ~]$ hadoop fs -ls /sqoop_output2018
+Found 3 items
+-rw-r--r--   1 cloudera supergroup          0 2018-08-11 18:27 /sqoop_output2018/_SUCCESS
+-rw-r--r--   1 cloudera supergroup        122 2018-08-11 18:27 /sqoop_output2018/part-m-00000
+-rw-r--r--   1 cloudera cloudera           40 2018-08-11 18:31 /sqoop_output2018/part-m-00001
+
+[cloudera@quickstart ~]$ hadoop fs -cat /sqoop_output2018/part-m-00000
+1,udemy,Bangalore,2018-08-11 18:24:19.0
+2,edureka,Walnut,2018-08-11 18:24:19.0
+3,acadgild,Bangalore,2018-08-11 18:24:19.0
+
+[cloudera@quickstart ~]$ hadoop fs -cat /sqoop_output2018/part-m-00001
+4,Vaishali,Mumbai,2018-08-11 18:28:25.0
+[cloudera@quickstart ~]$ 
+
+
+// HERE SECOND DUPLICATE RECORDS OF ID VALUE 3 Has been 
+removed while IMPORT STATEMENT. Thus while import no 
+duplicates were introduced and will be discarded.
+
+
+
+
+[cloudera@quickstart ~]$ sqoop import \
+--connect jdbc:mysql://localhost/retail_mysql_db \
+--username 'root' -P \
+--table 'mysql_orders_staging' \
+--target-dir '/sqoop_output2022' \
+--split-by id \
+--m 3;
+
+
+
+[cloudera@quickstart ~]$ hadoop fs -ls /sqoop_output2022/
+Found 4 items
+-rw-r--r--   1 cloudera supergroup          0 2018-08-11 23:01 /sqoop_output2022/_SUCCESS
+-rw-r--r--   1 cloudera supergroup         95 2018-08-11 23:01 /sqoop_output2022/part-m-00000
+-rw-r--r--   1 cloudera supergroup         63 2018-08-11 23:01 /sqoop_output2022/part-m-00001
+-rw-r--r--   1 cloudera supergroup         95 2018-08-11 23:01 /sqoop_output2022/part-m-00002
+
+
+[cloudera@quickstart ~]$ hadoop fs -cat /sqoop_output2022/part-m-00000
+6881,2018-08-07,10,GREEN DRESS
+6882,2018-08-08,11,MAROON DRESS
+6883,2018-08-09,12,PURPLE DRESS
+
+
+[cloudera@quickstart ~]$ hadoop fs -cat /sqoop_output2022/part-m-00001
+6884,2018-08-07,10,GREEN DRESS
+6885,2018-08-08,11,MAROON DRESS
+
+[cloudera@quickstart ~]$ hadoop fs -cat /sqoop_output2022/part-m-00002
+6886,2018-08-09,12,PURPLE DRESS
+6887,2018-08-10,10,GREEN DRESS
+6888,2018-08-11,11,MAROON DRESS
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
